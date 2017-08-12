@@ -1,0 +1,15 @@
+name: "Ashbury-Census Results"
+navbar:
+  title: "Ashbury-Census Results"
+  left:
+    - text: "Home"
+      href: index.html
+    - text: "Canterbury North / Ashbury"
+      href: Ashbury.html
+    - text: "Croydon Park / Enfield"
+      href: CroydonPark.html
+output:
+  html_document:
+    theme: cosmo
+    highlight: textmate
+output_dir: "."

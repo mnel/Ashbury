@@ -1,0 +1,135 @@
+---
+title: "Ashbury - Census results"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(readxl)
+library(data.table)
+library(ggplot2)
+download.file("http://www.censusdata.abs.gov.au/CensusOutput/copsub2016.NSF/All%20docs%20by%20catNo/2016~Community%20Profile~120031392/$File/TSP_120031392.zip","cna.zip")
+
+unzip("cna.zip")
+file <- "TSP_120031392.XLS"
+ages <- setDT(read_excel(file, sheet = "T 01", range = "A13:L24"))
+long_age <- melt(ages,id=1,measure.vars = c(2:4,6:8,10:12))
+long_age[, year := rep(c(2006,2011,2016),each=3*length(unique(`Age group(a):`)))]
+long_age[, sex := rep(c("male","female","persons"),each=length(unique(`Age group(a):`)))]
+long_age[, Age := gsub(" years","", `Age group(a):`)][, Age:= gsub(" and over"," +",Age)]
+long_age[, AgeFactor := factor(Age, levels = unique(Age))]
+```
+
+# Canterbury North / Ashbury SA2
+
+Source: Community profile: http://www.censusdata.abs.gov.au/census_services/getproduct/census/2016/communityprofile/120031392?opendocument 
+
+
+## Population by Age for Census years
+```{r}
+
+ggplot(long_age[sex=='persons'], aes(x= year, y = value,colour=AgeFactor)) + 
+  geom_line() +
+  scale_x_continuous(breaks = c(2006,2011,2016)) +
+  scale_color_brewer(palette = "Spectral") +
+  labs(x = "Census year", y = "Population", colour = 'Age') +
+  theme_bw()
+```
+
+## Population by Age and Sex
+```{r}
+ggplot(long_age[sex!='persons'], aes(x = AgeFactor, y = value)) +
+  geom_bar(stat="identity") +
+  facet_grid(year ~ sex) +
+  coord_flip() +
+  labs(x = "Age", y = "Population") +
+  theme_bw()
+```
+
+#Population Growth
+```{r}
+age_growth <- long_age[,  list(year = tail(year, -1), growth = diff(value) / head(value,-1)), by = list(AgeFactor,sex)]
+```
+
+Note declines from 2006 - 2011 but large growth in 25-34 and and similar growth in  by 5-14, 35-54 age group.
+
+```{r,results='asis'}
+ggplot(age_growth[sex=='persons'], aes(x = AgeFactor, y = growth)) + 
+  geom_bar(stat="identity",aes(fill = factor(growth>0))) +
+  facet_wrap(~year) + 
+  coord_flip() +
+  scale_y_continuous(label = scales::percent) +
+  labs(y = "% Growth in from previous Census",
+       x = "Age group") +
+  theme_bw() +
+  scale_fill_brewer(palette ="Set1") +
+  theme(legend.position="none")
+
+
+knitr::kable(age_growth[sex=='persons'][year==2016][,list("Age group" = AgeFactor, Percent = scales::percent(growth))])
+```
+
+## Population growth by gender
+
+Note losses 2006-2011 in 15-44 women. Now growing (2011-2016)
+
+```{r}
+ggplot(age_growth[sex!='persons'], aes(x = AgeFactor, y = growth)) + 
+  geom_bar(stat="identity",aes(fill = factor(growth>0))) +
+  facet_grid(sex~year) + 
+  coord_flip() +
+  scale_y_continuous(label = scales::percent) +
+  labs(y = "% Growth in from previous Census",
+       x = "Age group") +
+  theme_bw() +
+  scale_fill_brewer(palette ="Set1") +
+  theme(legend.position="none") 
+```
+
+# Families and family structure
+
+```{r}
+# Marital status and children
+
+families = rbindlist(
+  list(`2006` = read_excel(file, sheet = "T 27", range = "B17:F18",col_names = FALSE),
+       `2011` = read_excel(file, sheet = "T 27", range = "B27:F28",col_names = FALSE),
+       `2016` = read_excel(file, sheet = "T 27", range = "B37:F38",col_names = FALSE)),
+  id = "year"
+)
+
+long_families <- melt(families, id=1)[,
+  label := rep(c(1,2,3,"4+","Total"), each=6)][,
+  label2 := rep_len(c("Two","One"),.N)]
+
+total_families <- long_families[,list(N = sum(value)),by=list(label,year)]
+family_growth <- total_families [,  list(year = tail(year, -1), growth = diff(N) / head(N,-1)), by = list(label)]
+```
+
+## Number of families by children structure  2016
+
+```{r }
+ggplot(total_families[year==2016][label !='Total'], aes(x = label, y= N,fill=label)) + 
+  geom_bar(stat='identity')+
+  coord_flip() +
+  scale_fill_brewer(palette="Set1") +
+  labs(x = "Children", y= "Families") +
+  theme_bw() + theme(legend.position = "none")
+```
+
+## Growth in families
+
+Note 7.7% more families in 2016, particularly 1-2 children families (i.e. "young" /"smaller" / "beginning")
+
+```{r results = 'asis'}
+ggplot(family_growth,aes(x = label, y= growth, fill = growth >0))+ 
+  geom_bar(stat="identity") + 
+  facet_wrap(~year) +coord_flip() + 
+  scale_fill_brewer(palette="Set1") +
+  scale_y_continuous(label=scales::percent)+
+  labs(y = "% Growth in from previous Census","Number of Children") +
+  theme_bw() + theme(legend.position = 'none')
+
+knitr::kable(family_growth[year==2016][,list(Children  = label, growth = scales::percent(growth))])
+
+```

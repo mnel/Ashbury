@@ -4,13 +4,13 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(echo = FALSE,warning = FALSE)
 library(readxl)
 library(data.table)
 library(ggplot2)
-download.file("http://www.censusdata.abs.gov.au/CensusOutput/copsub2016.NSF/All%20docs%20by%20catNo/2016~Community%20Profile~120031392/$File/TSP_120031392.zip","cna.zip")
+#download.file("http://www.censusdata.abs.gov.au/CensusOutput/copsub2016.NSF/All%20docs%20by%20catNo/2016~Community%20Profile~120031392/$File/TSP_120031392.zip","cna.zip")
 
-unzip("cna.zip")
+#unzip("cna.zip")
 file <- "TSP_120031392.XLS"
 ages <- setDT(read_excel(file, sheet = "T 01", range = "A13:L24"))
 long_age <- melt(ages,id=1,measure.vars = c(2:4,6:8,10:12))
@@ -133,3 +133,198 @@ ggplot(family_growth,aes(x = label, y= growth, fill = growth >0))+
 knitr::kable(family_growth[year==2016][,list(Children  = label, growth = scales::percent(growth))])
 
 ```
+
+
+# English proficiency
+Note growth in low-English proficiency in 15-34 year olds
+```{r}
+english = rbindlist(
+  list(`2006` = read_excel(file, sheet = "T 11", range = "A13:I21",col_names = FALSE),
+       `2011` = read_excel(file, sheet = "T 11", range = "A27:I35",col_names = FALSE),
+       `2016` = read_excel(file, sheet = "T 11", range = "A41:I49",col_names = FALSE)),
+  id = "year"
+)[,!'X__3']
+english_long <- melt(english, id =1:2)
+
+labels <- c("English_only","Very well","Not very well","Not stated proficiency","Total non english","Not stated Language","Total")
+english_long[, label := variable]
+levels(english_long[['label']]) <- labels
+english_long[,Age := gsub(" and over", " +",gsub(X__1,pattern = " years",replacement = ""))]
+english_long[,AgeFactor := factor(Age, levels = unique(Age))]
+
+not_well <- english_long[label=="Not very well"]
+growth_not_well <- not_well[,  list(year = tail(year, -1), growth = diff(value) / head(value,-1)), by = list(AgeFactor)]
+ggplot(not_well,aes(x = AgeFactor, y= value)) + 
+  geom_bar(stat='identity') + 
+  facet_wrap(~year) +coord_flip() +
+  theme_bw() +
+  labs(x = "Age", y= "Number of people who do not speak English well or at all")
+
+
+ggplot(growth_not_well,aes(x = AgeFactor, y= growth, fill = growth >0))+ 
+  geom_bar(stat="identity") + 
+  facet_wrap(~year) +coord_flip() + 
+  scale_fill_brewer(palette="Set1") +
+  scale_y_continuous(label=scales::percent)+
+  labs(y = "% Growth in from previous Census",x= "Age",title = "People who do not speak English well or at all") +
+  theme_bw() + theme(legend.position = 'none')
+```
+
+
+## Religion
+
+```{r}
+
+religion = rbindlist(
+  list(`2006` = read_excel(file, sheet = "T 12a", range = "A13:I45",col_names = FALSE),
+       `2011` = read_excel(file, sheet = "T 12b", range = "A13:I45",col_names = FALSE),
+       `2016` = read_excel(file, sheet = "T 12c", range = "A13:I45",col_names = FALSE)),
+  id = "year"
+)
+
+religion[, Group := cumsum(X__1 %in% c("Buddhism","Christianity:","Hinduism","Judaism","Other Religions:","Secular Beliefs and Other Spiritual Beliefs","Religious affiliation not stated(d)")),by=year]
+GroupNames <- c("Buddhism","Christianity","Hinduism","Judaism","Other","No religion", "Not stated")
+religion_long <- melt(religion, id = c(1,2,11))
+total_religion <- religion_long[X__1 !='Total', list(value = sum(value,na.rm=TRUE)),by=list(year, Group= factor(Group,labels=GroupNames))]
+
+religion_by_age <- religion_long[X__1 !='Total', list(value = sum(value,na.rm=TRUE)),by=list(year, Group,variable)]
+religion_by_age[, Religion := factor(Group, labels = GroupNames)]
+religion_by_age[, AgeFactor := variable]
+levels(religion_by_age[['AgeFactor']]) <- growth_not_well[,levels(AgeFactor)]
+ggplot(total_religion, aes(x = Group, y= value,fill=year)) + 
+  geom_bar(stat='identity',position="dodge") + 
+  coord_flip() +
+  theme_bw() +
+  labs(x = "Religion", y= "Number") +
+  scale_fill_brewer(palette="Set1")
+
+growth_religion  <- total_religion[,  list(year = tail(year, -1), growth = diff(value) / head(value,-1)), by = list(Group)]
+growth_religion_age  <- religion_by_age[,  list(year = tail(year, -1), growth = diff(value) / head(value,-1)), by = list(Religion,AgeFactor)]
+ggplot(growth_religion,aes(x = Group, y= growth, fill = growth >0))+ 
+  geom_bar(stat="identity") + 
+  facet_wrap(~year) +coord_flip() + 
+  scale_fill_brewer(palette="Set1") +
+  scale_y_continuous(label=scales::percent)+
+  labs(y = "% Growth in from previous Census",x= "Religion") +
+  theme_bw() + theme(legend.position = 'none')
+```
+
+## Religion by age
+
+
+
+```{r}
+ggplot(religion_by_age, aes(x = Religion, y= value,fill=AgeFactor)) + 
+    geom_bar(stat='identity',position="dodge") + 
+    coord_flip() + facet_wrap(~year) +
+    theme_bw() +
+    labs(x = "Religion", y= "Number") +
+    scale_fill_brewer(palette="Set1","Age group") 
+
+
+ggplot(growth_religion_age,aes(x = AgeFactor, y= growth, fill = growth >0))+ 
+  geom_bar(stat="identity",position="dodge") + 
+  facet_grid(Religion~year) +coord_flip() + 
+  scale_fill_brewer(palette="Set1") +
+  scale_y_continuous(label=scales::percent)+
+  labs(y = "% Growth in from previous Census",x= "Age") +
+  theme_bw() + theme(legend.position = 'none')
+
+```
+
+
+## Christian Demoniations:
+Within Christians: 
+Note amongst wide spread "reduction" 2011-2016 small growth for 15-34 Anglicans.
+(Also, Baptist doing well from a low base)
+
+```{r}
+Christians <- religion_long[X__1 !='Total'&Group==2]
+Christians[, Denomination := X__1][!X__1 %in%c("Anglican","Baptist","Eastern Orthodox","Catholic"), Denomination := "Other"]
+
+by_denom_age <- Christians[,list(value = sum(value, na.rm =TRUE)),by=list(year,Denomination,AgeFactor = variable)]
+levels(by_denom_age[['AgeFactor']]) <- growth_religion_age[,levels(AgeFactor)]
+by_denom <- Christians[,list(value = sum(value, na.rm =TRUE)),by=list(year,Denomination)]
+
+growth_denom <- by_denom[,  list(year = tail(year, -1), growth = diff(value) / head(value,-1)), by = list(Denomination)]
+growth_denom_age  <- by_denom_age[,  list(year = tail(year, -1), growth = diff(value) / head(value,-1)), by = list(Denomination,AgeFactor)]
+
+ggplot(by_denom, aes(x = Denomination, y= value,fill=year)) + 
+  geom_bar(stat='identity',position="dodge") + 
+  coord_flip() +
+  theme_bw() +
+  labs(x = "Christian Denomination", y= "Number") +
+  scale_fill_brewer(palette="Set1")
+
+ggplot(growth_denom,aes(x = Denomination, y= growth, fill = growth >0))+ 
+  geom_bar(stat="identity") + 
+  facet_wrap(~year) +coord_flip() + 
+  scale_fill_brewer(palette="Set1") +
+  scale_y_continuous(label=scales::percent)+
+  labs(y = "% Growth in from previous Census",x= "Denomination") +
+  theme_bw() + theme(legend.position = 'none')
+
+
+ggplot(by_denom_age, aes(x = Denomination, y= value,fill=AgeFactor)) + 
+    geom_bar(stat='identity',position="dodge") + 
+    coord_flip() + facet_wrap(~year) +
+    theme_bw() +
+    labs(x = "Denomination", y= "Number") +
+    scale_fill_brewer(palette="Set1","Age group") 
+
+
+ggplot(growth_denom_age,aes(x = AgeFactor, y= growth, fill = growth >0))+ 
+  geom_bar(stat="identity",position="dodge") + 
+  facet_grid(Denomination~year) +coord_flip() + 
+  scale_fill_brewer(palette="Set1") +
+  scale_y_continuous(label=scales::percent)+
+  labs(y = "% Growth in from previous Census",x= "Age") +
+  theme_bw() + theme(legend.position = 'none')
+
+```
+
+# Income for families
+
+```{r}
+
+incomeCouples = rbindlist(
+  list(`2006` = read_excel(file, sheet = "T 22a", range = "A13:F28",col_names = FALSE),
+       `2011` = read_excel(file, sheet = "T 22a", range = "A34:F49",col_names = FALSE),
+       `2016` = read_excel(file, sheet = "T 22b", range = "A13:F28",col_names = FALSE)),
+  id = "year"
+)
+
+incomeOne = rbindlist(
+  list(`2006` = read_excel(file, sheet = "T 23a", range = "A13:F28",col_names = FALSE),
+       `2011` = read_excel(file, sheet = "T 23a", range = "A34:F49",col_names = FALSE),
+       `2016` = read_excel(file, sheet = "T 23b", range = "A15:F30",col_names = FALSE)),
+  id = "year"
+)
+
+income <- rbindlist(list(Couple  = incomeCouples, One = incomeOne), id = "Parent")
+setnames(income,"X__1","Income")
+
+income_long <- melt(income, id =c(1,2,3))
+levels(income_long[['variable']]) <- c("1","2","3","4+","Total")
+income_long[ ,IncomeFactor := factor(Income,levels = unique(Income))]
+
+income_total <- income_long[variable=='Total',list(value=sum(value)),by=list(year,IncomeFactor)]
+
+growth_income <- income_total[,  list(year = tail(year, -1), growth = diff(value) / head(value,-1)), by = list(IncomeFactor)]
+
+ggplot(income_long[variable=="Total"][Income %like% "[,/]"], aes(x = IncomeFactor, y = value,fill=Parent)) +
+  geom_bar(stat='identity', position = 'stack') +
+  facet_wrap(~year) +
+  coord_flip() +
+  scale_fill_brewer(palette='Set1') +
+  labs(x = "Income bracket",y="Number") +
+  theme_bw()
+
+
+ggplot(growth_income[IncomeFactor%like% "[,/]"],aes(x = IncomeFactor, y= growth, fill = growth >0))+ 
+  geom_bar(stat="identity",position="dodge") + 
+  facet_grid(~year) +coord_flip() + 
+  scale_fill_brewer(palette="Set1") +
+  scale_y_continuous(label=scales::percent)+
+  labs(y = "% Growth in from previous Census",x= "Income bracket") +
+  theme_bw() + theme(legend.position = 'none')
